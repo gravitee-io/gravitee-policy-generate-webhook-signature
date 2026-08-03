@@ -50,6 +50,43 @@
                 }
             ]
         },
+        "timestampValidity": {
+            "title": "Replay Protection",
+            "description": "Optionally generate a timestamp, include it in the HMAC signature, and expose it in a header so the receiver can reject stale or replayed requests/messages.",
+            "type": "object",
+            "oneOf": [
+                {
+                    "title": "Disabled",
+                    "description": "No timestamp is generated or signed.",
+                    "properties": {
+                        "enabled": {
+                            "const": false
+                        }
+                    }
+                },
+                {
+                    "title": "Enabled",
+                    "description": "Generate a timestamp, sign it along with the body/message, and expose it in a header.",
+                    "properties": {
+                        "enabled": {
+                            "const": true
+                        },
+                        "targetTimestampHeader": {
+                            "title": "Timestamp Header",
+                            "description": "Specify the HTTP/Message header that will contain the generated timestamp (epoch seconds)",
+                            "type": "string",
+                            "default": "X-HMAC-Timestamp"
+                        },
+                        "delimiter": {
+                            "title": "Delimiter",
+                            "description": "Specify a delimiter to separate the timestamp from the rest of the signed content",
+                            "type": "string",
+                            "default": "."
+                        }
+                    }
+                }
+            ]
+        },
         "secret": {
             "title": "Secret",
             "description": "The secret key used to generate the HMAC signature",

@@ -47,6 +47,7 @@ import java.io.IOException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.Key;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
@@ -139,6 +140,13 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
             log.debug("Final messageContent (prepended with additional header values): {}", messageContent);
         }
 
+        if (configuration.getTimestampValidity().isEnabled()) {
+            String timestamp = String.valueOf(Instant.now().getEpochSecond());
+            log.debug("Config> Generated timestamp: {}", timestamp);
+            httpHeaders.set(configuration.getTimestampValidity().getTargetTimestampHeader(), timestamp);
+            messageContent = timestamp + configuration.getTimestampValidity().getDelimiter() + messageContent;
+        }
+
         //Generate HMAC Signature
         String mySignature = generateHmacSignature(messageContent, secret, algorithm);
 
@@ -200,6 +208,13 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
             }
 
             log.debug("Final messageContent (prepended with additional header values): {}", messageContent);
+        }
+
+        if (configuration.getTimestampValidity().isEnabled()) {
+            String timestamp = String.valueOf(Instant.now().getEpochSecond());
+            log.debug("Config> Generated timestamp: {}", timestamp);
+            message.headers().set(configuration.getTimestampValidity().getTargetTimestampHeader(), timestamp);
+            messageContent = timestamp + configuration.getTimestampValidity().getDelimiter() + messageContent;
         }
 
         //Generate HMAC Signature

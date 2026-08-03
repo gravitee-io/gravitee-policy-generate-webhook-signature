@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2015 The Gravitee team (http://gravitee.io)
+ * Copyright (C) 2025 The Gravitee team (http://gravitee.io)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package io.gravitee.policy.webhook_signature_generator.configuration;
 
-import io.gravitee.policy.api.PolicyConfiguration;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -25,15 +24,14 @@ import lombok.Setter;
  */
 @Getter
 @Setter
-public class WebhookSignatureGeneratorPolicyConfiguration implements PolicyConfiguration {
+public class TimestampValidityConfiguration {
 
-    private String targetSignatureHeader;
+    // Optional - When enabled, a timestamp (epoch seconds) is generated, written to the targetTimestampHeader,
+    // and prepended to the content used to compute the HMAC signature, allowing the receiver to detect replayed requests/messages
+    private boolean enabled;
 
-    private SchemeTypeConfiguration schemeType = new SchemeTypeConfiguration();
+    private String targetTimestampHeader;
 
-    private TimestampValidityConfiguration timestampValidity = new TimestampValidityConfiguration();
-
-    private String algorithm;
-
-    private String secret;
+    // Delimiter placed between the generated timestamp and the rest of the signed content
+    private String delimiter;
 }
