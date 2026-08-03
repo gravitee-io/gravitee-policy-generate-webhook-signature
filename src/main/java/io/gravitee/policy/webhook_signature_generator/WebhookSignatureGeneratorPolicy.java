@@ -16,47 +16,24 @@
 package io.gravitee.policy.webhook_signature_generator;
 
 import io.gravitee.el.TemplateEngine;
-import io.gravitee.gateway.api.ExecutionContext;
-import io.gravitee.gateway.api.Request;
-import io.gravitee.gateway.api.Response;
 import io.gravitee.gateway.api.buffer.Buffer;
-import io.gravitee.gateway.api.el.EvaluableRequest;
-import io.gravitee.gateway.api.el.EvaluableResponse;
-import io.gravitee.gateway.api.http.HttpHeaderNames;
 import io.gravitee.gateway.api.http.HttpHeaders;
-import io.gravitee.gateway.api.stream.BufferedReadWriteStream;
-import io.gravitee.gateway.api.stream.ReadWriteStream;
-import io.gravitee.gateway.api.stream.SimpleReadWriteStream;
 import io.gravitee.gateway.reactive.api.ExecutionFailure;
 import io.gravitee.gateway.reactive.api.context.http.HttpBaseExecutionContext;
-import io.gravitee.gateway.reactive.api.context.http.HttpExecutionContext;
 import io.gravitee.gateway.reactive.api.context.http.HttpMessageExecutionContext;
 import io.gravitee.gateway.reactive.api.context.http.HttpPlainExecutionContext;
-import io.gravitee.gateway.reactive.api.context.http.HttpPlainResponse;
 import io.gravitee.gateway.reactive.api.message.Message;
-import io.gravitee.gateway.reactive.api.policy.Policy;
 import io.gravitee.gateway.reactive.api.policy.http.HttpPolicy;
-import io.gravitee.policy.api.PolicyChain;
-import io.gravitee.policy.api.PolicyResult;
-import io.gravitee.policy.webhook_signature_generator.configuration.SchemeTypeConfiguration;
 import io.gravitee.policy.webhook_signature_generator.configuration.WebhookSignatureGeneratorPolicyConfiguration;
 import io.reactivex.rxjava3.core.Completable;
-import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
-import java.io.IOException;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
-import java.security.Key;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.HashMap;
-import java.util.HexFormat;
 import java.util.List;
-import java.util.Map;
 import java.util.function.BiFunction;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import lombok.extern.slf4j.Slf4j;
@@ -70,9 +47,6 @@ import lombok.extern.slf4j.Slf4j;
 public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
 
     private static final String WEBHOOK_SIGNATURE_ERROR = "WEBHOOK_SIGNATURE_ERROR";
-    private static final String WEBHOOK_SIGNATURE_INVALID_SIGNATURE = "WEBHOOK_SIGNATURE_INVALID_SIGNATURE";
-    private static final String WEBHOOK_SIGNATURE_NOT_FOUND = "WEBHOOK_SIGNATURE_NOT_FOUND";
-    private static final String WEBHOOK_SIGNATURE_NOT_BASE64 = "WEBHOOK_SIGNATURE_NOT_BASE64";
     private static final String WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID = "WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID";
 
     /**
@@ -100,55 +74,31 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
             .onErrorResumeNext(th -> errorHandling(ctx, WEBHOOK_SIGNATURE_ERROR, th.toString(), WebhookSignatureGeneratorPolicy::interrupt));
     }
 
-    private <T extends HttpBaseExecutionContext> Completable validate(T ctx, HttpHeaders httpHeaders, Buffer buffer, BiFunction<T, ExecutionFailure, Completable> interrupt)
-        throws IOException {
+    private <T extends HttpBaseExecutionContext> Completable validate(
+        T ctx,
+        HttpHeaders httpHeaders,
+        Buffer buffer,
+        BiFunction<T, ExecutionFailure, Completable> interrupt
+    ) {
         log.info("Executing WebhookSignatureGeneratorPolicy (in onResponse context)...");
 
         String secret = ctx.getTemplateEngine().getValue(configuration.getSecret(), String.class);
         String algorithm = configuration.getAlgorithm();
         String messageContent = buffer.toString();
-        List<String> addedHeaders = null;
-        String headersDelimiter = null;
 
         log.debug("Config> messageContent: {}", messageContent);
 
-        log.debug("Config> Does the Signature validation require additional HTTP headers?: {}", configuration.getSchemeType().isEnabled()); // true|false
-        if (configuration.getSchemeType().isEnabled()) {
-            addedHeaders = new ArrayList<>(configuration.getSchemeType().getHeaders());
-
-            headersDelimiter = configuration.getSchemeType().getHeadersDelimiter();
-            log.debug("Config> headersDelimiter: {}", headersDelimiter);
-
-            if (addedHeaders.size() > 0) {
-                int i = 0;
-                String tmpData = "";
-                while (i < addedHeaders.size()) {
-                    log.debug("Config> Prefixing HTTP header '{}' ({}) to HTTP Content", addedHeaders.get(i), httpHeaders.get(addedHeaders.get(i)));
-                    if (httpHeaders.get(addedHeaders.get(i)) == null) {
-                        log.error("A specified header value is invalid or missing!");
-                        return errorHandling(ctx, WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID, "A specified header value is invalid or missing!", interrupt);
-                    } else {
-                        tmpData += httpHeaders.get(addedHeaders.get(i)) + headersDelimiter;
-                    }
-                    i++;
-                }
-                messageContent = tmpData + messageContent;
-            } else {
-                return errorHandling(ctx, WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID, "Additional headers were specified, but unable to find any configured headers!", interrupt);
-            }
-
-            log.debug("Final messageContent (prepended with additional header values): {}", messageContent);
+        String signedContent;
+        try {
+            signedContent = prependAdditionalHeaders(messageContent, httpHeaders::get);
+        } catch (IllegalArgumentException e) {
+            log.error(e.getMessage());
+            return errorHandling(ctx, WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID, e.getMessage(), interrupt);
         }
-
-        if (configuration.getTimestampValidity().isEnabled()) {
-            String timestamp = String.valueOf(Instant.now().getEpochSecond());
-            log.debug("Config> Generated timestamp: {}", timestamp);
-            httpHeaders.set(configuration.getTimestampValidity().getTargetTimestampHeader(), timestamp);
-            messageContent = timestamp + configuration.getTimestampValidity().getDelimiter() + messageContent;
-        }
+        signedContent = prependTimestamp(signedContent, timestamp -> httpHeaders.set(configuration.getTimestampValidity().getTargetTimestampHeader(), timestamp));
 
         //Generate HMAC Signature
-        String mySignature = generateHmacSignature(messageContent, secret, algorithm);
+        String mySignature = generateHmacSignature(signedContent, secret, algorithm);
 
         return addSignatureToHeader(ctx.getTemplateEngine(), ctx.response().headers(), mySignature)
             .onErrorResumeWith(errorHandling(ctx, WEBHOOK_SIGNATURE_ERROR, "Unable to process Signature Generator of HTTP Body!", interrupt));
@@ -176,49 +126,21 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
         String secret = ctx.getTemplateEngine().getValue(configuration.getSecret(), String.class);
         String algorithm = configuration.getAlgorithm();
         String messageContent = message.content().toString();
-        List<String> addedHeaders = null;
-        String headersDelimiter = null;
 
         log.debug("Config> messageContent: {}", messageContent);
 
-        log.debug("Config> Does the Signature validation require additional Message headers?: {}", configuration.getSchemeType().isEnabled()); // true|false
-        if (configuration.getSchemeType().isEnabled()) {
-            addedHeaders = new ArrayList<>(configuration.getSchemeType().getHeaders());
-
-            headersDelimiter = configuration.getSchemeType().getHeadersDelimiter();
-            log.debug("Config> headersDelimiter: {}", headersDelimiter);
-
-            if (addedHeaders.size() > 0) {
-                int i = 0;
-                String tmpData = "";
-                while (i < addedHeaders.size()) {
-                    log.debug("Config> Prefixing HTTP/Message header '{}' ({}) to Message Content", addedHeaders.get(i), message.headers().get(addedHeaders.get(i)));
-                    if (message.headers().get(addedHeaders.get(i)) == null) {
-                        return ctx.interruptMessageWith(
-                            new ExecutionFailure(500).key(WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID).message("A specified header value is invalid or missing!")
-                        );
-                    } else {
-                        tmpData += message.headers().get(addedHeaders.get(i)) + headersDelimiter;
-                    }
-                    i++;
-                }
-                messageContent = tmpData + messageContent;
-            } else {
-                return ctx.interruptMessageWith(new ExecutionFailure(500).key(WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID).message("A specified header value is invalid or missing!"));
-            }
-
-            log.debug("Final messageContent (prepended with additional header values): {}", messageContent);
+        String signedContent;
+        try {
+            signedContent = prependAdditionalHeaders(messageContent, message.headers()::get);
+        } catch (IllegalArgumentException e) {
+            log.error(e.getMessage());
+            return ctx.interruptMessageWith(new ExecutionFailure(500).key(WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID).message(e.getMessage()));
         }
-
-        if (configuration.getTimestampValidity().isEnabled()) {
-            String timestamp = String.valueOf(Instant.now().getEpochSecond());
-            log.debug("Config> Generated timestamp: {}", timestamp);
-            message.headers().set(configuration.getTimestampValidity().getTargetTimestampHeader(), timestamp);
-            messageContent = timestamp + configuration.getTimestampValidity().getDelimiter() + messageContent;
-        }
+        signedContent =
+            prependTimestamp(signedContent, timestamp -> message.headers().set(configuration.getTimestampValidity().getTargetTimestampHeader(), timestamp));
 
         //Generate HMAC Signature
-        String mySignature = generateHmacSignature(messageContent, secret, algorithm);
+        String mySignature = generateHmacSignature(signedContent, secret, algorithm);
 
         return addSignatureToHeader(ctx.getTemplateEngine(message), message.headers(), mySignature)
             .andThen(Maybe.just(message))
@@ -227,6 +149,56 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
 
     // SUPPORTING CODE
     // ***************
+
+    /**
+     * Prepends the configured additional header values (each followed by the configured delimiter) to the given content.
+     * Returns the content unchanged when the "additional headers" scheme is disabled.
+     *
+     * @throws IllegalArgumentException if the scheme is enabled but no headers are configured, or a configured header is missing
+     */
+    private String prependAdditionalHeaders(String content, Function<String, String> headerGetter) {
+        if (!configuration.getSchemeType().isEnabled()) {
+            return content;
+        }
+
+        List<String> addedHeaders = new ArrayList<>(configuration.getSchemeType().getHeaders());
+        if (addedHeaders.isEmpty()) {
+            throw new IllegalArgumentException("Additional headers were specified, but unable to find any configured headers!");
+        }
+
+        String headersDelimiter = configuration.getSchemeType().getHeadersDelimiter();
+        log.debug("Config> headersDelimiter: {}", headersDelimiter);
+
+        StringBuilder prefix = new StringBuilder();
+        for (String headerName : addedHeaders) {
+            String headerValue = headerGetter.apply(headerName);
+            log.debug("Config> Prefixing header '{}' ({}) to content", headerName, headerValue);
+            if (headerValue == null) {
+                throw new IllegalArgumentException("A specified header value is invalid or missing!");
+            }
+            prefix.append(headerValue).append(headersDelimiter);
+        }
+
+        String result = prefix + content;
+        log.debug("Final content (prepended with additional header values): {}", result);
+        return result;
+    }
+
+    /**
+     * Generates a current epoch-seconds timestamp, exposes it via the given setter (typically writing it to a header),
+     * and prepends it (followed by the configured delimiter) to the given content. Returns the content unchanged when
+     * replay-protection is disabled.
+     */
+    private String prependTimestamp(String content, Consumer<String> timestampSetter) {
+        if (!configuration.getTimestampValidity().isEnabled()) {
+            return content;
+        }
+
+        String timestamp = String.valueOf(Instant.now().getEpochSecond());
+        log.debug("Config> Generated timestamp: {}", timestamp);
+        timestampSetter.accept(timestamp);
+        return timestamp + configuration.getTimestampValidity().getDelimiter() + content;
+    }
 
     private Completable addSignatureToHeader(final TemplateEngine templateEngine, final HttpHeaders httpHeaders, final String signature) {
         log.debug("Setting '{}' HTTP Header to '{}'", configuration.getTargetSignatureHeader(), signature);
@@ -253,7 +225,6 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
         } catch (Exception ex) {
             log.error("Exception occurred while generating HMAC signature!");
             log.error(ex.getMessage());
-            //request.metrics().setMessage(ex.getMessage());
             return null;
         }
     }
