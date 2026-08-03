@@ -17,7 +17,6 @@ package io.gravitee.policy.webhook_signature_generator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -38,6 +37,8 @@ import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.observers.TestObserver;
 import java.util.List;
 import java.util.function.Function;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -98,7 +99,7 @@ class WebhookSignatureGeneratorPolicyTest {
         TestObserver<Void> testObserver = policy.onResponse(plainContext).test();
 
         testObserver.assertComplete();
-        verify(httpHeaders).set(eq("X-HMAC-Signature"), anyString());
+        verify(httpHeaders).set("X-HMAC-Signature", hmac(payload, "mySecret", "HmacSHA256"));
     }
 
     @Test
@@ -154,8 +155,9 @@ class WebhookSignatureGeneratorPolicyTest {
         verify(httpHeaders).set(eq("X-HMAC-Signature"), signatureCaptor.capture());
         String signatureSHA512 = signatureCaptor.getValue();
 
-        assertThat(signatureSHA1).isNotEqualTo(signatureSHA256);
-        assertThat(signatureSHA256).isNotEqualTo(signatureSHA512);
+        assertThat(signatureSHA1).isEqualTo(hmac("test payload", "mySecret", "HmacSHA1"));
+        assertThat(signatureSHA256).isEqualTo(hmac("test payload", "mySecret", "HmacSHA256"));
+        assertThat(signatureSHA512).isEqualTo(hmac("test payload", "mySecret", "HmacSHA512"));
     }
 
     @Test
@@ -177,7 +179,7 @@ class WebhookSignatureGeneratorPolicyTest {
         TestObserver<Void> testObserver = policy.onResponse(plainContext).test();
 
         testObserver.assertComplete();
-        verify(httpHeaders).set(eq("X-HMAC-Signature"), anyString());
+        verify(httpHeaders).set("X-HMAC-Signature", hmac("custom-value.test payload", "mySecret", "HmacSHA256"));
     }
 
     @Test
@@ -248,8 +250,13 @@ class WebhookSignatureGeneratorPolicyTest {
         TestObserver<Void> testObserver = policy.onResponse(plainContext).test();
 
         testObserver.assertComplete();
-        verify(httpHeaders).set(eq("X-HMAC-Timestamp"), anyString());
-        verify(httpHeaders).set(eq("X-HMAC-Signature"), anyString());
+
+        ArgumentCaptor<String> timestampCaptor = ArgumentCaptor.forClass(String.class);
+        verify(httpHeaders).set(eq("X-HMAC-Timestamp"), timestampCaptor.capture());
+        String timestamp = timestampCaptor.getValue();
+        assertThat(timestamp).matches("\\d+");
+
+        verify(httpHeaders).set("X-HMAC-Signature", hmac(timestamp + ".test payload", "mySecret", "HmacSHA256"));
     }
 
     @Test
@@ -271,7 +278,69 @@ class WebhookSignatureGeneratorPolicyTest {
         verify(response).onMessage(onMessageCaptor.capture());
         onMessageCaptor.getValue().apply(message).test().assertComplete();
 
-        verify(httpHeaders).set(eq("X-HMAC-Signature"), anyString());
+        verify(httpHeaders).set("X-HMAC-Signature", hmac("message payload", "mySecret", "HmacSHA256"));
+    }
+
+    @Test
+    void shouldGenerateSignatureOnMessageResponseWithAdditionalHeaders() {
+        SchemeTypeConfiguration schemeType = new SchemeTypeConfiguration();
+        schemeType.setEnabled(true);
+        schemeType.setHeaders(List.of("X-Custom-Header"));
+        schemeType.setHeadersDelimiter(".");
+        configuration.setSchemeType(schemeType);
+
+        WebhookSignatureGeneratorPolicy policy = new WebhookSignatureGeneratorPolicy(configuration);
+
+        when(message.content()).thenReturn(Buffer.buffer("message payload"));
+        when(message.headers()).thenReturn(httpHeaders);
+        when(httpHeaders.get("X-Custom-Header")).thenReturn("custom-value");
+
+        HttpMessageResponse response = mockMessageResponse();
+        when(messageContext.response()).thenReturn(response);
+        when(messageContext.getTemplateEngine()).thenReturn(templateEngine);
+        when(templateEngine.getValue("mySecret", String.class)).thenReturn("mySecret");
+
+        ArgumentCaptor<Function<Message, Maybe<Message>>> onMessageCaptor = ArgumentCaptor.forClass(Function.class);
+
+        policy.onMessageResponse(messageContext).test().assertComplete();
+
+        verify(response).onMessage(onMessageCaptor.capture());
+        onMessageCaptor.getValue().apply(message).test().assertComplete();
+
+        verify(httpHeaders).set("X-HMAC-Signature", hmac("custom-value.message payload", "mySecret", "HmacSHA256"));
+    }
+
+    @Test
+    void shouldGenerateSignatureOnMessageResponseWithTimestamp() {
+        TimestampValidityConfiguration timestampValidity = new TimestampValidityConfiguration();
+        timestampValidity.setEnabled(true);
+        timestampValidity.setTargetTimestampHeader("X-HMAC-Timestamp");
+        timestampValidity.setDelimiter(".");
+        configuration.setTimestampValidity(timestampValidity);
+
+        WebhookSignatureGeneratorPolicy policy = new WebhookSignatureGeneratorPolicy(configuration);
+
+        when(message.content()).thenReturn(Buffer.buffer("message payload"));
+        when(message.headers()).thenReturn(httpHeaders);
+
+        HttpMessageResponse response = mockMessageResponse();
+        when(messageContext.response()).thenReturn(response);
+        when(messageContext.getTemplateEngine()).thenReturn(templateEngine);
+        when(templateEngine.getValue("mySecret", String.class)).thenReturn("mySecret");
+
+        ArgumentCaptor<Function<Message, Maybe<Message>>> onMessageCaptor = ArgumentCaptor.forClass(Function.class);
+
+        policy.onMessageResponse(messageContext).test().assertComplete();
+
+        verify(response).onMessage(onMessageCaptor.capture());
+        onMessageCaptor.getValue().apply(message).test().assertComplete();
+
+        ArgumentCaptor<String> timestampCaptor = ArgumentCaptor.forClass(String.class);
+        verify(httpHeaders).set(eq("X-HMAC-Timestamp"), timestampCaptor.capture());
+        String timestamp = timestampCaptor.getValue();
+        assertThat(timestamp).matches("\\d+");
+
+        verify(httpHeaders).set("X-HMAC-Signature", hmac(timestamp + ".message payload", "mySecret", "HmacSHA256"));
     }
 
     @Test
@@ -307,6 +376,16 @@ class WebhookSignatureGeneratorPolicyTest {
     }
 
     // Helper methods
+
+    private static String hmac(String data, String secret, String algorithm) {
+        try {
+            Mac mac = Mac.getInstance(algorithm);
+            mac.init(new SecretKeySpec(secret.getBytes("UTF-8"), algorithm));
+            return java.util.Base64.getEncoder().encodeToString(mac.doFinal(data.getBytes("UTF-8")));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     private HttpPlainResponse mockResponse(Buffer buffer) {
         HttpPlainResponse response = mock(HttpPlainResponse.class);
