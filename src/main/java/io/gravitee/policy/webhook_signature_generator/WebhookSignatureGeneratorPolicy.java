@@ -101,7 +101,7 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
         String mySignature = generateHmacSignature(signedContent, secret, algorithm);
 
         return addSignatureToHeader(ctx.getTemplateEngine(), ctx.response().headers(), mySignature)
-            .onErrorResumeWith(errorHandling(ctx, WEBHOOK_SIGNATURE_ERROR, "Unable to process Signature Generator of HTTP Body!", interrupt));
+            .onErrorResumeNext(th -> errorHandling(ctx, WEBHOOK_SIGNATURE_ERROR, "Unable to process Signature Generator of HTTP Body!", interrupt));
     }
 
     private <T extends HttpBaseExecutionContext> Completable errorHandling(T ctx, String key, String th, BiFunction<T, ExecutionFailure, Completable> interrupt) {
@@ -144,7 +144,9 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
 
         return addSignatureToHeader(ctx.getTemplateEngine(message), message.headers(), mySignature)
             .andThen(Maybe.just(message))
-            .onErrorResumeWith(ctx.interruptMessageWith(new ExecutionFailure(500).key(WEBHOOK_SIGNATURE_ERROR).message("Unable to process Signature Generator in Message!")));
+            .onErrorResumeNext(th ->
+                ctx.interruptMessageWith(new ExecutionFailure(500).key(WEBHOOK_SIGNATURE_ERROR).message("Unable to process Signature Generator in Message!"))
+            );
     }
 
     // SUPPORTING CODE
