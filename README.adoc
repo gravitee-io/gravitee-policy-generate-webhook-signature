@@ -1,0 +1,222 @@
+= Webhook Signature Generator Policy
+
+ifdef::env-github[]
+image:https://img.shields.io/static/v1?label=Available%20at&message=Gravitee.io&color=1EC9D2["Gravitee.io", link="https://download.gravitee.io/#graviteeio-apim/plugins/policies/gravitee-policy-webhook-signature-generator/"]
+image:https://img.shields.io/badge/License-Apache%202.0-blue.svg["License", link="https://github.com/gravitee-io/gravitee-policy-webhook-signature-generator/blob/master/LICENSE.txt"]
+image:https://img.shields.io/badge/semantic--release-conventional%20commits-e10079?logo=semantic-release["Releases", link="https://github.com/gravitee-io/gravitee-policy-webhook-signature-generator/releases"]
+image:https://circleci.com/gh/gravitee-io/webhook-logo.svg?style=svg["CircleCI", link="https://circleci.com/gh/gravitee-io/gravitee-policy-webhook-signature-generator"]
+endif::[]
+
+== Phase
+
+[cols="4*", options="header"]
+|===
+^|onRequest
+^|onResponse
+^|onMessageRequest
+^|onMessageResponse
+
+^.^| -
+^.^| X
+^.^| -
+^.^| X
+
+|===
+
+== Description
+
+Generates a Webhook (HMAC) signature against the outbound HTTP body or Message, and optionally additional custom header(s), to ensure its identity.  Typically used (in a Gravitee V4-Message API with Protocol Mediation) to generate & attach a HMAC signature of an outbound message to a remote Webhook.
+
+HMAC Signatures are a kind of authentication method which is adding a level of security.  It ensures the request has originated from the known source and has not been tampered with.
+
+The sender of the message generates a HMAC signature (typically stored in a header of the request) and is then validated by the receiver using a pre-shared secret.  This policy will generate that signature, and add it into a HTTP header in the outbound message.
+
+The "Signature" is based on the model that the receiver must authenticate itself with a digital signature produced by a shared symmetric key (e.g.: HMAC).  Also known as the shared "secret".
+
+> When combining this policy with the AVRO or Protobuf (binary to text) transformation policies, remember to order that policy beforehand (so this policy receives the message as plain text in order to generate the HMAC signature).
+
+== Configuration
+
+|===
+|Property |Required |Description |Default
+
+.^|targetSignatureHeader
+^.^|X
+|Specify the HTTP header that will contain the generated HMAC signature
+^.^| X-HMAC-Signature
+
+.^|schemeType
+^.^|X
+|By default, this policy will generate the HMAC signature only against the HTTP body.  Set this boolean to 'true' if you need to include additional headers (as well as the HTTP body/message) in the signature generation.
+^.^| false
+
+.^|headersDelimiter
+^.^|-
+|Specify a delimiter to separate each header and the body/message
+^.^| .
+
+.^|headers [List]
+^.^|-
+|List of existing HTTP or Message headers to prepend their values to the body/message for generating the HMAC signature
+^.^| 
+
+.^|secret
+^.^|X
+|The secret key used to generate the HMAC signature
+^.^| 
+
+.^|algorithms
+^.^|X
+|Specify the HMAC algorithm (e.g.: HmacSHA1, HmacSHA256, HmacSHA384, or HmacSHA512)
+^.^| HmacSHA256
+
+|===
+
+
+[source, json]
+.Webhook Signature Generator Policy example:
+----
+{
+  "policy": "webhook-signature-generator",
+  "configuration": {
+	"schemeType": {
+	  "enabled": true,
+	  "headersDelimiter": ".",
+	  "headers": [
+		"My-CustomHeader-Timestamp"
+	  ]
+	},
+	"secret": "mySecret",
+	"targetSignatureHeader": "X-HMAC-Signature",
+	"algorithm": "HmacSHA256"
+  }
+}
+----
+
+== Example Usage
+
+This example describes how to generate a HMAC signature for each outbound message delivered from an Event Broker (e.g.:Confluent) via a Webhook (PUSH Plan) - using Protocol Mediation.
+
+For added complexity, you may want the HMAC signature to be generated from both the Message Content AND a Message Header.  In our protocol mediation scenario, when publishing messages into the Event Broker you can use the `Transform Headers` policy to convert HTTP Headers into Message Headers.  And then when subscribing to or consuming those messages, the HMAC Signature can be generated from both the Message Content AND a Message Header(s).
+
+Add this policy into the Subscribe phase (of the Event Messages flow).  Remember to order any other transformation policies (like AVRO<>JSON) before this policy.  
+
+Policy configuration; specify the name of the new Signature Header to add to the outbound message, as well as the secret and algorithm type.  You can now add additional Message Header(s) from your Message in your Event Broker.
+
+[,shell]
+.Posting Messages into an Event Broker (only to demonstrate HTTP Headers to Message Headers transformation):
+----
+curl -L 'https://gravitee-apim-gateway/post-to-confluent' -H 'Content-Type: application/json' -H 'X-Custom-Header: some_unique_value' -d '{"my_field1":16,"my_field2":"This is a message from HTTP POST to Confluent Cloud (using a Schema Registry)"}'
+----
+The above API service uses the Transform Headers policy to add a new `my-custom-header-confluent` message header with the value from the requests' `X-Custom-Header` header.
+
+[source, json]
+.Receiving of Webhook (with HMAC Signature Header applied) example:
+----
+Webhook.site:
+	"request":{
+		"method":"POST",
+		"url":"https://webhook.site/5de85005-abcd-1234-2ad18ef8b07f",
+		"headers":[
+			{"name":"x-hmac-signature","value":"P247Tg1qbJiokTKO2hVd17B6Nb6WfaMhgdN/YB9DnO4="},
+			{"name":"my-custom-header-confluent","value":"some_unique_value"},
+			{"name":"x-gravitee-request-id","value":"4f60cb44-9598-4c80-a0cb-4495984c80a0"}
+		],
+		"bodySize":108,
+		"postData":{
+			"text":"{\"my_field1\":16,\"my_field2\":\"This is a message from HTTP POST to Confluent Cloud (using a Schema Registry)\"}"}},
+			...
+----
+
+Now the customer or receiver can validate this request by combining the `my-custom-header-confluent` header value and the HTTP body/content, and comparing HMAC signatures.
+
+Don't forget to include the `headers delimiter` when sharing the `secret` with the receiver (so they use the exact same content to generate & validate the HMAC signature)!
+
+[source, python]
+.Validating the HMAC Signature of the received request (Python) example:
+----
+import hashlib
+import hmac
+import base64
+
+def validate_hmac_signature(signature, message, key):
+    """
+    Validates an HMAC signature against a message and secret key.
+
+    Args:
+        signature: The received HMAC signature (Base64 encoded).
+        message: The message that was signed.
+        key: The shared secret key used for signing.
+
+    Returns:
+        True if the signature is valid, False otherwise.
+    """
+    # Convert the key to bytes (if it's a string)
+    if isinstance(key, str):
+        key = key.encode('utf-8')
+
+    # Convert the message to bytes (if it's a string)
+    if isinstance(message, str):
+        message = message.encode('utf-8')
+
+    # Calculate the HMAC signature
+    calculated_signature = hmac.new(key, message, hashlib.sha256).digest()
+    
+    # Base64 encode the calculated signature
+    calculated_signature_base64 = base64.b64encode(calculated_signature).decode('utf-8')
+
+    # Compare the received signature with the calculated signature
+    return hmac.compare_digest(signature.encode('utf-8'), calculated_signature_base64.encode('utf-8'))
+
+# Example Usage:
+signature = "P247Tg1qbJiokTKO2hVd17B6Nb6WfaMhgdN/YB9DnO4="  # Replace with the received signature
+message = b'some_unique_value.{"my_field1":16,"my_field2":"This is a message from HTTP POST to Confluent Cloud (using a Schema Registry)"}'  # Replace with the raw message (prepended with any Message Headers and headersDelimiter)
+key = b"testsecret" # Replace with your secret key
+
+if validate_hmac_signature(signature, message, key):
+    print("HMAC signature is valid")
+else:
+    print("HMAC signature is invalid")
+----
+
+== Http Status Code
+
+|===
+|Code |Message
+
+.^| ```500```
+| In case of:
+
+* Missing target signature header or secret
+
+* Response does not contain the specified headers to use for signature generation
+
+* Signature generation failure (such as not being able to read the payload or message)
+|===
+
+== Errors
+
+If you're looking to override the default response provided by the policy, you can do it
+thanks to the response templates feature. These templates must be define at the API level (see `Response Templates`
+from the `Proxy` menu).
+
+Here are the error keys sent by this policy:
+
+[cols="2*", options="header"]
+|===
+^|Key
+^|Parameters
+
+.^|WEBHOOK_SIGNATURE_INVALID_SIGNATURE
+^.^|-
+
+.^|WEBHOOK_SIGNATURE_NOT_FOUND
+^.^|-
+
+.^|WEBHOOK_SIGNATURE_NOT_BASE64
+^.^|-
+
+.^|WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID
+^.^|-
+
+|===
