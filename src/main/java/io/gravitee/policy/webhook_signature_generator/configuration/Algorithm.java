@@ -20,8 +20,8 @@ package io.gravitee.policy.webhook_signature_generator.configuration;
  * @author GraviteeSource Team
  */
 public enum Algorithm {
-    HmacSHA1,
-    HmacSHA256,
-    HmacSHA384,
-    HmacSHA512,
+  HmacSHA1,
+  HmacSHA256,
+  HmacSHA384,
+  HmacSHA512,
 }

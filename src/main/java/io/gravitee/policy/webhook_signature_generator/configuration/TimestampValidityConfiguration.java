@@ -26,12 +26,12 @@ import lombok.Setter;
 @Setter
 public class TimestampValidityConfiguration {
 
-    // Optional - When enabled, a timestamp (epoch seconds) is generated, written to the targetTimestampHeader,
-    // and prepended to the content used to compute the HMAC signature, allowing the receiver to detect replayed requests/messages
-    private boolean enabled;
+  // Optional - When enabled, a timestamp (epoch seconds) is generated, written to the targetTimestampHeader,
+  // and prepended to the content used to compute the HMAC signature, allowing the receiver to detect replayed requests/messages
+  private boolean enabled;
 
-    private String targetTimestampHeader;
+  private String targetTimestampHeader;
 
-    // Delimiter placed between the generated timestamp and the rest of the signed content
-    private String delimiter;
+  // Delimiter placed between the generated timestamp and the rest of the signed content
+  private String delimiter;
 }

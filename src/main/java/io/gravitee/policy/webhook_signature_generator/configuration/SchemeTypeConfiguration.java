@@ -28,27 +28,27 @@ import lombok.Setter;
 @Setter
 public class SchemeTypeConfiguration {
 
-    private boolean enabled;
+  private boolean enabled;
 
-    public boolean isEnabled() {
-        return enabled;
-    }
+  public boolean isEnabled() {
+    return enabled;
+  }
 
-    public SchemeTypeConfiguration setEnabled(boolean enabled) {
-        this.enabled = enabled;
-        return this;
-    }
+  public SchemeTypeConfiguration setEnabled(boolean enabled) {
+    this.enabled = enabled;
+    return this;
+  }
 
-    // Optional - List of additional headers to add to the Webhook signature creation
-    private String headersDelimiter;
+  // Optional - List of additional headers to add to the Webhook signature creation
+  private String headersDelimiter;
 
-    private List<String> headers = new ArrayList<>();
+  private List<String> headers = new ArrayList<>();
 
-    public List<String> getHeaders() {
-        return headers;
-    }
+  public List<String> getHeaders() {
+    return headers;
+  }
 
-    public void setHeaders(List<String> headers) {
-        this.headers = headers;
-    }
+  public void setHeaders(List<String> headers) {
+    this.headers = headers;
+  }
 }
