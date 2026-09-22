@@ -16,46 +16,21 @@
 package io.gravitee.policy.webhook_signature_generator;
 
 import io.gravitee.el.TemplateEngine;
-import io.gravitee.gateway.api.ExecutionContext;
-import io.gravitee.gateway.api.Request;
-import io.gravitee.gateway.api.Response;
 import io.gravitee.gateway.api.buffer.Buffer;
-import io.gravitee.gateway.api.el.EvaluableRequest;
-import io.gravitee.gateway.api.el.EvaluableResponse;
-import io.gravitee.gateway.api.http.HttpHeaderNames;
 import io.gravitee.gateway.api.http.HttpHeaders;
-import io.gravitee.gateway.api.stream.BufferedReadWriteStream;
-import io.gravitee.gateway.api.stream.ReadWriteStream;
-import io.gravitee.gateway.api.stream.SimpleReadWriteStream;
 import io.gravitee.gateway.reactive.api.ExecutionFailure;
 import io.gravitee.gateway.reactive.api.context.http.HttpBaseExecutionContext;
-import io.gravitee.gateway.reactive.api.context.http.HttpExecutionContext;
 import io.gravitee.gateway.reactive.api.context.http.HttpMessageExecutionContext;
 import io.gravitee.gateway.reactive.api.context.http.HttpPlainExecutionContext;
-import io.gravitee.gateway.reactive.api.context.http.HttpPlainResponse;
 import io.gravitee.gateway.reactive.api.message.Message;
-import io.gravitee.gateway.reactive.api.policy.Policy;
 import io.gravitee.gateway.reactive.api.policy.http.HttpPolicy;
-import io.gravitee.policy.api.PolicyChain;
-import io.gravitee.policy.api.PolicyResult;
-import io.gravitee.policy.webhook_signature_generator.configuration.SchemeTypeConfiguration;
 import io.gravitee.policy.webhook_signature_generator.configuration.WebhookSignatureGeneratorPolicyConfiguration;
 import io.reactivex.rxjava3.core.Completable;
-import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
-import java.io.IOException;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
-import java.security.Key;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.HashMap;
-import java.util.HexFormat;
 import java.util.List;
-import java.util.Map;
 import java.util.function.BiFunction;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import lombok.extern.slf4j.Slf4j;
@@ -70,12 +45,6 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
 
   private static final String WEBHOOK_SIGNATURE_ERROR =
     "WEBHOOK_SIGNATURE_ERROR";
-  private static final String WEBHOOK_SIGNATURE_INVALID_SIGNATURE =
-    "WEBHOOK_SIGNATURE_INVALID_SIGNATURE";
-  private static final String WEBHOOK_SIGNATURE_NOT_FOUND =
-    "WEBHOOK_SIGNATURE_NOT_FOUND";
-  private static final String WEBHOOK_SIGNATURE_NOT_BASE64 =
-    "WEBHOOK_SIGNATURE_NOT_BASE64";
   private static final String WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID =
     "WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID";
 
@@ -125,7 +94,7 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
     HttpHeaders httpHeaders,
     Buffer buffer,
     BiFunction<T, ExecutionFailure, Completable> interrupt
-  ) throws IOException {
+  ) {
     log.info(
       "Executing WebhookSignatureGeneratorPolicy (in onResponse context)..."
     );
@@ -373,7 +342,6 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
     } catch (Exception ex) {
       log.error("Exception occurred while generating HMAC signature!");
       log.error(ex.getMessage());
-      //request.metrics().setMessage(ex.getMessage());
       return null;
     }
   }
