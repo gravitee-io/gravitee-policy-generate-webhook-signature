@@ -51,6 +51,8 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
     "WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID";
   private static final String WEBHOOK_SIGNATURE_GENERATION_FAILED =
     "WEBHOOK_SIGNATURE_GENERATION_FAILED";
+  private static final String WEBHOOK_SIGNATURE_TIMESTAMP_HEADER_NOT_VALID =
+    "WEBHOOK_SIGNATURE_TIMESTAMP_HEADER_NOT_VALID";
 
   /**
    * Policy configuration
@@ -124,12 +126,22 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
         interrupt
       );
     }
-    signedContent = prependTimestamp(signedContent, timestamp ->
-      httpHeaders.set(
-        configuration.getTimestampValidity().getTargetTimestampHeader(),
-        timestamp
-      )
-    );
+    try {
+      signedContent = prependTimestamp(signedContent, timestamp ->
+        httpHeaders.set(
+          configuration.getTimestampValidity().getTargetTimestampHeader(),
+          timestamp
+        )
+      );
+    } catch (IllegalArgumentException e) {
+      log.error(e.getMessage());
+      return errorHandling(
+        ctx,
+        WEBHOOK_SIGNATURE_TIMESTAMP_HEADER_NOT_VALID,
+        e.getMessage(),
+        interrupt
+      );
+    }
 
     //Generate HMAC Signature
     String mySignature = generateHmacSignature(
@@ -217,14 +229,23 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
           .message(e.getMessage())
       );
     }
-    signedContent = prependTimestamp(signedContent, timestamp ->
-      message
-        .headers()
-        .set(
-          configuration.getTimestampValidity().getTargetTimestampHeader(),
-          timestamp
-        )
-    );
+    try {
+      signedContent = prependTimestamp(signedContent, timestamp ->
+        message
+          .headers()
+          .set(
+            configuration.getTimestampValidity().getTargetTimestampHeader(),
+            timestamp
+          )
+      );
+    } catch (IllegalArgumentException e) {
+      log.error(e.getMessage());
+      return ctx.interruptMessageWith(
+        new ExecutionFailure(500)
+          .key(WEBHOOK_SIGNATURE_TIMESTAMP_HEADER_NOT_VALID)
+          .message(e.getMessage())
+      );
+    }
 
     //Generate HMAC Signature
     String mySignature = generateHmacSignature(
@@ -321,6 +342,15 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
   ) {
     if (!configuration.getTimestampValidity().isEnabled()) {
       return content;
+    }
+
+    String targetHeader = configuration
+      .getTimestampValidity()
+      .getTargetTimestampHeader();
+    if (targetHeader == null || targetHeader.isBlank()) {
+      throw new IllegalArgumentException(
+        "Replay protection is enabled, but no timestamp header is configured!"
+      );
     }
 
     String timestamp = String.valueOf(Instant.now().getEpochSecond());
