@@ -20,6 +20,6 @@ package io.gravitee.policy.webhook_signature_generator.configuration;
  * @author GraviteeSource Team
  */
 public enum WebhookSignatureScheme {
-    REQUESTBODY,
-    REQUESTBODYHEADER,
+  REQUESTBODY,
+  REQUESTBODYHEADER,
 }

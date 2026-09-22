@@ -58,7 +58,7 @@ The "Signature" is based on the model that the receiver must authenticate itself
 .^|headers [List]
 ^.^|-
 |List of existing HTTP or Message headers to prepend their values to the body/message for generating the HMAC signature
-^.^| 
+^.^|
 
 .^|secret
 ^.^|X

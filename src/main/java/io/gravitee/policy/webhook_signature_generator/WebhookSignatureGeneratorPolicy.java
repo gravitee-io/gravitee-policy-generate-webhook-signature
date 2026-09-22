@@ -68,178 +68,313 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
 
-    private static final String WEBHOOK_SIGNATURE_ERROR = "WEBHOOK_SIGNATURE_ERROR";
-    private static final String WEBHOOK_SIGNATURE_INVALID_SIGNATURE = "WEBHOOK_SIGNATURE_INVALID_SIGNATURE";
-    private static final String WEBHOOK_SIGNATURE_NOT_FOUND = "WEBHOOK_SIGNATURE_NOT_FOUND";
-    private static final String WEBHOOK_SIGNATURE_NOT_BASE64 = "WEBHOOK_SIGNATURE_NOT_BASE64";
-    private static final String WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID = "WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID";
+  private static final String WEBHOOK_SIGNATURE_ERROR =
+    "WEBHOOK_SIGNATURE_ERROR";
+  private static final String WEBHOOK_SIGNATURE_INVALID_SIGNATURE =
+    "WEBHOOK_SIGNATURE_INVALID_SIGNATURE";
+  private static final String WEBHOOK_SIGNATURE_NOT_FOUND =
+    "WEBHOOK_SIGNATURE_NOT_FOUND";
+  private static final String WEBHOOK_SIGNATURE_NOT_BASE64 =
+    "WEBHOOK_SIGNATURE_NOT_BASE64";
+  private static final String WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID =
+    "WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID";
 
-    /**
-     * Policy configuration
-     */
-    private final WebhookSignatureGeneratorPolicyConfiguration configuration;
+  /**
+   * Policy configuration
+   */
+  private final WebhookSignatureGeneratorPolicyConfiguration configuration;
 
-    public WebhookSignatureGeneratorPolicy(final WebhookSignatureGeneratorPolicyConfiguration configuration) {
-        this.configuration = configuration;
-    }
+  public WebhookSignatureGeneratorPolicy(
+    final WebhookSignatureGeneratorPolicyConfiguration configuration
+  ) {
+    this.configuration = configuration;
+  }
 
-    @Override
-    public String id() {
-        return "webhook-signature-generator";
-    }
+  @Override
+  public String id() {
+    return "webhook-signature-generator";
+  }
 
-    // HTTP RESPONSE
-    // **************
-    @Override
-    public Completable onResponse(HttpPlainExecutionContext ctx) {
-        return ctx
-            .response()
-            .body()
-            .flatMapCompletable(buffer -> validate(ctx, ctx.response().headers(), buffer, WebhookSignatureGeneratorPolicy::interrupt))
-            .onErrorResumeNext(th -> errorHandling(ctx, WEBHOOK_SIGNATURE_ERROR, th.toString(), WebhookSignatureGeneratorPolicy::interrupt));
-    }
+  // HTTP RESPONSE
+  // **************
+  @Override
+  public Completable onResponse(HttpPlainExecutionContext ctx) {
+    return ctx
+      .response()
+      .body()
+      .flatMapCompletable(buffer ->
+        validate(
+          ctx,
+          ctx.response().headers(),
+          buffer,
+          WebhookSignatureGeneratorPolicy::interrupt
+        )
+      )
+      .onErrorResumeNext(th ->
+        errorHandling(
+          ctx,
+          WEBHOOK_SIGNATURE_ERROR,
+          th.toString(),
+          WebhookSignatureGeneratorPolicy::interrupt
+        )
+      );
+  }
 
-    private <T extends HttpBaseExecutionContext> Completable validate(T ctx, HttpHeaders httpHeaders, Buffer buffer, BiFunction<T, ExecutionFailure, Completable> interrupt)
-        throws IOException {
-        log.info("Executing WebhookSignatureGeneratorPolicy (in onResponse context)...");
+  private <T extends HttpBaseExecutionContext> Completable validate(
+    T ctx,
+    HttpHeaders httpHeaders,
+    Buffer buffer,
+    BiFunction<T, ExecutionFailure, Completable> interrupt
+  ) throws IOException {
+    log.info(
+      "Executing WebhookSignatureGeneratorPolicy (in onResponse context)..."
+    );
 
-        String secret = ctx.getTemplateEngine().getValue(configuration.getSecret(), String.class);
-        String algorithm = configuration.getAlgorithm();
-        String messageContent = buffer.toString();
-        List<String> addedHeaders = null;
-        String headersDelimiter = null;
+    String secret = ctx
+      .getTemplateEngine()
+      .getValue(configuration.getSecret(), String.class);
+    String algorithm = configuration.getAlgorithm();
+    String messageContent = buffer.toString();
+    List<String> addedHeaders = null;
+    String headersDelimiter = null;
 
-        log.debug("Config> messageContent: {}", messageContent);
+    log.debug("Config> messageContent: {}", messageContent);
 
-        log.debug("Config> Does the Signature validation require additional HTTP headers?: {}", configuration.getSchemeType().isEnabled()); // true|false
-        if (configuration.getSchemeType().isEnabled()) {
-            addedHeaders = new ArrayList<>(configuration.getSchemeType().getHeaders());
+    log.debug(
+      "Config> Does the Signature validation require additional HTTP headers?: {}",
+      configuration.getSchemeType().isEnabled()
+    ); // true|false
+    if (configuration.getSchemeType().isEnabled()) {
+      addedHeaders = new ArrayList<>(
+        configuration.getSchemeType().getHeaders()
+      );
 
-            headersDelimiter = configuration.getSchemeType().getHeadersDelimiter();
-            log.debug("Config> headersDelimiter: {}", headersDelimiter);
+      headersDelimiter = configuration.getSchemeType().getHeadersDelimiter();
+      log.debug("Config> headersDelimiter: {}", headersDelimiter);
 
-            if (addedHeaders.size() > 0) {
-                int i = 0;
-                String tmpData = "";
-                while (i < addedHeaders.size()) {
-                    log.debug("Config> Prefixing HTTP header '{}' ({}) to HTTP Content", addedHeaders.get(i), httpHeaders.get(addedHeaders.get(i)));
-                    if (httpHeaders.get(addedHeaders.get(i)) == null) {
-                        log.error("A specified header value is invalid or missing!");
-                        return errorHandling(ctx, WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID, "A specified header value is invalid or missing!", interrupt);
-                    } else {
-                        tmpData += httpHeaders.get(addedHeaders.get(i)) + headersDelimiter;
-                    }
-                    i++;
-                }
-                messageContent = tmpData + messageContent;
-            } else {
-                return errorHandling(ctx, WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID, "Additional headers were specified, but unable to find any configured headers!", interrupt);
-            }
-
-            log.debug("Final messageContent (prepended with additional header values): {}", messageContent);
+      if (addedHeaders.size() > 0) {
+        int i = 0;
+        String tmpData = "";
+        while (i < addedHeaders.size()) {
+          log.debug(
+            "Config> Prefixing HTTP header '{}' ({}) to HTTP Content",
+            addedHeaders.get(i),
+            httpHeaders.get(addedHeaders.get(i))
+          );
+          if (httpHeaders.get(addedHeaders.get(i)) == null) {
+            log.error("A specified header value is invalid or missing!");
+            return errorHandling(
+              ctx,
+              WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID,
+              "A specified header value is invalid or missing!",
+              interrupt
+            );
+          } else {
+            tmpData += httpHeaders.get(addedHeaders.get(i)) + headersDelimiter;
+          }
+          i++;
         }
+        messageContent = tmpData + messageContent;
+      } else {
+        return errorHandling(
+          ctx,
+          WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID,
+          "Additional headers were specified, but unable to find any configured headers!",
+          interrupt
+        );
+      }
 
-        //Generate HMAC Signature
-        String mySignature = generateHmacSignature(messageContent, secret, algorithm);
-
-        return addSignatureToHeader(ctx.getTemplateEngine(), ctx.response().headers(), mySignature)
-            .onErrorResumeWith(errorHandling(ctx, WEBHOOK_SIGNATURE_ERROR, "Unable to process Signature Generator of HTTP Body!", interrupt));
+      log.debug(
+        "Final messageContent (prepended with additional header values): {}",
+        messageContent
+      );
     }
 
-    private <T extends HttpBaseExecutionContext> Completable errorHandling(T ctx, String key, String th, BiFunction<T, ExecutionFailure, Completable> interrupt) {
-        ctx.metrics().setErrorMessage(th);
-        return interrupt.apply(ctx, new ExecutionFailure(500).key(key).message(th));
-    }
+    //Generate HMAC Signature
+    String mySignature = generateHmacSignature(
+      messageContent,
+      secret,
+      algorithm
+    );
 
-    private static Completable interrupt(HttpPlainExecutionContext ctx, ExecutionFailure executionFailure) {
-        return ctx.interruptWith(executionFailure);
-    }
+    return addSignatureToHeader(
+      ctx.getTemplateEngine(),
+      ctx.response().headers(),
+      mySignature
+    ).onErrorResumeWith(
+      errorHandling(
+        ctx,
+        WEBHOOK_SIGNATURE_ERROR,
+        "Unable to process Signature Generator of HTTP Body!",
+        interrupt
+      )
+    );
+  }
 
-    // MESSAGE RESPONSE
-    // ****************
-    @Override
-    public Completable onMessageResponse(HttpMessageExecutionContext ctx) {
-        return ctx.response().onMessage(message -> generateSignatureForMessage(ctx, message));
-    }
+  private <T extends HttpBaseExecutionContext> Completable errorHandling(
+    T ctx,
+    String key,
+    String th,
+    BiFunction<T, ExecutionFailure, Completable> interrupt
+  ) {
+    ctx.metrics().setErrorMessage(th);
+    return interrupt.apply(ctx, new ExecutionFailure(500).key(key).message(th));
+  }
 
-    private Maybe<Message> generateSignatureForMessage(final HttpMessageExecutionContext ctx, final Message message) {
-        log.info("Executing WebhookSignatureGeneratorPolicy (in onMessageResponse context)...");
+  private static Completable interrupt(
+    HttpPlainExecutionContext ctx,
+    ExecutionFailure executionFailure
+  ) {
+    return ctx.interruptWith(executionFailure);
+  }
 
-        String secret = ctx.getTemplateEngine().getValue(configuration.getSecret(), String.class);
-        String algorithm = configuration.getAlgorithm();
-        String messageContent = message.content().toString();
-        List<String> addedHeaders = null;
-        String headersDelimiter = null;
+  // MESSAGE RESPONSE
+  // ****************
+  @Override
+  public Completable onMessageResponse(HttpMessageExecutionContext ctx) {
+    return ctx
+      .response()
+      .onMessage(message -> generateSignatureForMessage(ctx, message));
+  }
 
-        log.debug("Config> messageContent: {}", messageContent);
+  private Maybe<Message> generateSignatureForMessage(
+    final HttpMessageExecutionContext ctx,
+    final Message message
+  ) {
+    log.info(
+      "Executing WebhookSignatureGeneratorPolicy (in onMessageResponse context)..."
+    );
 
-        log.debug("Config> Does the Signature validation require additional Message headers?: {}", configuration.getSchemeType().isEnabled()); // true|false
-        if (configuration.getSchemeType().isEnabled()) {
-            addedHeaders = new ArrayList<>(configuration.getSchemeType().getHeaders());
+    String secret = ctx
+      .getTemplateEngine()
+      .getValue(configuration.getSecret(), String.class);
+    String algorithm = configuration.getAlgorithm();
+    String messageContent = message.content().toString();
+    List<String> addedHeaders = null;
+    String headersDelimiter = null;
 
-            headersDelimiter = configuration.getSchemeType().getHeadersDelimiter();
-            log.debug("Config> headersDelimiter: {}", headersDelimiter);
+    log.debug("Config> messageContent: {}", messageContent);
 
-            if (addedHeaders.size() > 0) {
-                int i = 0;
-                String tmpData = "";
-                while (i < addedHeaders.size()) {
-                    log.debug("Config> Prefixing HTTP/Message header '{}' ({}) to Message Content", addedHeaders.get(i), message.headers().get(addedHeaders.get(i)));
-                    if (message.headers().get(addedHeaders.get(i)) == null) {
-                        return ctx.interruptMessageWith(
-                            new ExecutionFailure(500).key(WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID).message("A specified header value is invalid or missing!")
-                        );
-                    } else {
-                        tmpData += message.headers().get(addedHeaders.get(i)) + headersDelimiter;
-                    }
-                    i++;
-                }
-                messageContent = tmpData + messageContent;
-            } else {
-                return ctx.interruptMessageWith(new ExecutionFailure(500).key(WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID).message("A specified header value is invalid or missing!"));
-            }
+    log.debug(
+      "Config> Does the Signature validation require additional Message headers?: {}",
+      configuration.getSchemeType().isEnabled()
+    ); // true|false
+    if (configuration.getSchemeType().isEnabled()) {
+      addedHeaders = new ArrayList<>(
+        configuration.getSchemeType().getHeaders()
+      );
 
-            log.debug("Final messageContent (prepended with additional header values): {}", messageContent);
+      headersDelimiter = configuration.getSchemeType().getHeadersDelimiter();
+      log.debug("Config> headersDelimiter: {}", headersDelimiter);
+
+      if (addedHeaders.size() > 0) {
+        int i = 0;
+        String tmpData = "";
+        while (i < addedHeaders.size()) {
+          log.debug(
+            "Config> Prefixing HTTP/Message header '{}' ({}) to Message Content",
+            addedHeaders.get(i),
+            message.headers().get(addedHeaders.get(i))
+          );
+          if (message.headers().get(addedHeaders.get(i)) == null) {
+            return ctx.interruptMessageWith(
+              new ExecutionFailure(500)
+                .key(WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID)
+                .message("A specified header value is invalid or missing!")
+            );
+          } else {
+            tmpData +=
+              message.headers().get(addedHeaders.get(i)) + headersDelimiter;
+          }
+          i++;
         }
+        messageContent = tmpData + messageContent;
+      } else {
+        return ctx.interruptMessageWith(
+          new ExecutionFailure(500)
+            .key(WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID)
+            .message("A specified header value is invalid or missing!")
+        );
+      }
 
-        //Generate HMAC Signature
-        String mySignature = generateHmacSignature(messageContent, secret, algorithm);
-
-        return addSignatureToHeader(ctx.getTemplateEngine(message), message.headers(), mySignature)
-            .andThen(Maybe.just(message))
-            .onErrorResumeWith(ctx.interruptMessageWith(new ExecutionFailure(500).key(WEBHOOK_SIGNATURE_ERROR).message("Unable to process Signature Generator in Message!")));
+      log.debug(
+        "Final messageContent (prepended with additional header values): {}",
+        messageContent
+      );
     }
 
-    // SUPPORTING CODE
-    // ***************
+    //Generate HMAC Signature
+    String mySignature = generateHmacSignature(
+      messageContent,
+      secret,
+      algorithm
+    );
 
-    private Completable addSignatureToHeader(final TemplateEngine templateEngine, final HttpHeaders httpHeaders, final String signature) {
-        log.debug("Setting '{}' HTTP Header to '{}'", configuration.getTargetSignatureHeader(), signature);
-        return Completable.fromRunnable(() -> httpHeaders.set(configuration.getTargetSignatureHeader(), signature));
+    return addSignatureToHeader(
+      ctx.getTemplateEngine(message),
+      message.headers(),
+      mySignature
+    )
+      .andThen(Maybe.just(message))
+      .onErrorResumeWith(
+        ctx.interruptMessageWith(
+          new ExecutionFailure(500)
+            .key(WEBHOOK_SIGNATURE_ERROR)
+            .message("Unable to process Signature Generator in Message!")
+        )
+      );
+  }
+
+  // SUPPORTING CODE
+  // ***************
+
+  private Completable addSignatureToHeader(
+    final TemplateEngine templateEngine,
+    final HttpHeaders httpHeaders,
+    final String signature
+  ) {
+    log.debug(
+      "Setting '{}' HTTP Header to '{}'",
+      configuration.getTargetSignatureHeader(),
+      signature
+    );
+    return Completable.fromRunnable(() ->
+      httpHeaders.set(configuration.getTargetSignatureHeader(), signature)
+    );
+  }
+
+  // Method to generate HMAC signature
+  private String generateHmacSignature(
+    String data,
+    String secretKey,
+    String algorithm
+  ) {
+    try {
+      // Create a SecretKeySpec from the key
+      SecretKeySpec secretKeySpec = new SecretKeySpec(
+        secretKey.getBytes("UTF-8"),
+        algorithm
+      );
+
+      // Initialize the Mac instance with the specified algorithm
+      Mac mac = Mac.getInstance(algorithm);
+      mac.init(secretKeySpec);
+
+      // Generate the HMAC hash of the data
+      byte[] hmacHash = mac.doFinal(data.getBytes("UTF-8"));
+
+      log.debug(
+        "Generated HMAC signature: {}",
+        Base64.getEncoder().encodeToString(hmacHash)
+      );
+
+      // Return the Base64 encoded HMAC signature
+      return Base64.getEncoder().encodeToString(hmacHash);
+    } catch (Exception ex) {
+      log.error("Exception occurred while generating HMAC signature!");
+      log.error(ex.getMessage());
+      //request.metrics().setMessage(ex.getMessage());
+      return null;
     }
-
-    // Method to generate HMAC signature
-    private String generateHmacSignature(String data, String secretKey, String algorithm) {
-        try {
-            // Create a SecretKeySpec from the key
-            SecretKeySpec secretKeySpec = new SecretKeySpec(secretKey.getBytes("UTF-8"), algorithm);
-
-            // Initialize the Mac instance with the specified algorithm
-            Mac mac = Mac.getInstance(algorithm);
-            mac.init(secretKeySpec);
-
-            // Generate the HMAC hash of the data
-            byte[] hmacHash = mac.doFinal(data.getBytes("UTF-8"));
-
-            log.debug("Generated HMAC signature: {}", Base64.getEncoder().encodeToString(hmacHash));
-
-            // Return the Base64 encoded HMAC signature
-            return Base64.getEncoder().encodeToString(hmacHash);
-        } catch (Exception ex) {
-            log.error("Exception occurred while generating HMAC signature!");
-            log.error(ex.getMessage());
-            //request.metrics().setMessage(ex.getMessage());
-            return null;
-        }
-    }
+  }
 }
