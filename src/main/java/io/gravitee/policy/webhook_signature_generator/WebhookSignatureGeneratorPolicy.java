@@ -97,7 +97,7 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
     Buffer buffer,
     BiFunction<T, ExecutionFailure, Completable> interrupt
   ) {
-    log.info(
+    log.debug(
       "Executing WebhookSignatureGeneratorPolicy (in onResponse context)..."
     );
 
@@ -179,7 +179,7 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
     final HttpMessageExecutionContext ctx,
     final Message message
   ) {
-    log.info(
+    log.debug(
       "Executing WebhookSignatureGeneratorPolicy (in onMessageResponse context)..."
     );
 
