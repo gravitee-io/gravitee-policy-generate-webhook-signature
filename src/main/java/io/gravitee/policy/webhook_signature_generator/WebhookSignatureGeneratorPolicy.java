@@ -15,7 +15,6 @@
  */
 package io.gravitee.policy.webhook_signature_generator;
 
-import io.gravitee.el.TemplateEngine;
 import io.gravitee.gateway.api.buffer.Buffer;
 import io.gravitee.gateway.api.http.HttpHeaders;
 import io.gravitee.gateway.reactive.api.ExecutionFailure;
@@ -138,7 +137,6 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
     );
 
     return addSignatureToHeader(
-      ctx.getTemplateEngine(),
       ctx.response().headers(),
       mySignature
     ).onErrorResumeNext(th ->
@@ -221,11 +219,7 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
       algorithm
     );
 
-    return addSignatureToHeader(
-      ctx.getTemplateEngine(message),
-      message.headers(),
-      mySignature
-    )
+    return addSignatureToHeader(message.headers(), mySignature)
       .andThen(Maybe.just(message))
       .onErrorResumeNext(th ->
         ctx.interruptMessageWith(
@@ -313,7 +307,6 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
   }
 
   private Completable addSignatureToHeader(
-    final TemplateEngine templateEngine,
     final HttpHeaders httpHeaders,
     final String signature
   ) {
