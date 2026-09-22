@@ -27,10 +27,12 @@ import io.gravitee.gateway.reactive.api.policy.http.HttpPolicy;
 import io.gravitee.policy.webhook_signature_generator.configuration.WebhookSignatureGeneratorPolicyConfiguration;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Maybe;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -121,6 +123,12 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
         interrupt
       );
     }
+    signedContent = prependTimestamp(signedContent, timestamp ->
+      httpHeaders.set(
+        configuration.getTimestampValidity().getTargetTimestampHeader(),
+        timestamp
+      )
+    );
 
     //Generate HMAC Signature
     String mySignature = generateHmacSignature(
@@ -197,6 +205,14 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
           .message(e.getMessage())
       );
     }
+    signedContent = prependTimestamp(signedContent, timestamp ->
+      message
+        .headers()
+        .set(
+          configuration.getTimestampValidity().getTargetTimestampHeader(),
+          timestamp
+        )
+    );
 
     //Generate HMAC Signature
     String mySignature = generateHmacSignature(
@@ -273,6 +289,27 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
       result
     );
     return result;
+  }
+
+  /**
+   * Generates a current epoch-seconds timestamp, exposes it via the given setter (typically writing it to a header),
+   * and prepends it (followed by the configured delimiter) to the given content. Returns the content unchanged when
+   * replay-protection is disabled.
+   */
+  private String prependTimestamp(
+    String content,
+    Consumer<String> timestampSetter
+  ) {
+    if (!configuration.getTimestampValidity().isEnabled()) {
+      return content;
+    }
+
+    String timestamp = String.valueOf(Instant.now().getEpochSecond());
+    log.debug("Config> Generated timestamp: {}", timestamp);
+    timestampSetter.accept(timestamp);
+    return (
+      timestamp + configuration.getTimestampValidity().getDelimiter() + content
+    );
   }
 
   private Completable addSignatureToHeader(
