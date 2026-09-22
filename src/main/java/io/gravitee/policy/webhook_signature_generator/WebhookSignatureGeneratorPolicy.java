@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import lombok.extern.slf4j.Slf4j;
@@ -104,64 +105,26 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
       .getValue(configuration.getSecret(), String.class);
     String algorithm = configuration.getAlgorithm();
     String messageContent = buffer.toString();
-    List<String> addedHeaders = null;
-    String headersDelimiter = null;
 
-    log.debug("Config> messageContent: {}", messageContent);
-
-    log.debug(
-      "Config> Does the Signature validation require additional HTTP headers?: {}",
-      configuration.getSchemeType().isEnabled()
-    ); // true|false
-    if (configuration.getSchemeType().isEnabled()) {
-      addedHeaders = new ArrayList<>(
-        configuration.getSchemeType().getHeaders()
+    String signedContent;
+    try {
+      signedContent = prependAdditionalHeaders(
+        messageContent,
+        httpHeaders::get
       );
-
-      headersDelimiter = configuration.getSchemeType().getHeadersDelimiter();
-      log.debug("Config> headersDelimiter: {}", headersDelimiter);
-
-      if (addedHeaders.size() > 0) {
-        int i = 0;
-        String tmpData = "";
-        while (i < addedHeaders.size()) {
-          log.debug(
-            "Config> Prefixing HTTP header '{}' ({}) to HTTP Content",
-            addedHeaders.get(i),
-            httpHeaders.get(addedHeaders.get(i))
-          );
-          if (httpHeaders.get(addedHeaders.get(i)) == null) {
-            log.error("A specified header value is invalid or missing!");
-            return errorHandling(
-              ctx,
-              WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID,
-              "A specified header value is invalid or missing!",
-              interrupt
-            );
-          } else {
-            tmpData += httpHeaders.get(addedHeaders.get(i)) + headersDelimiter;
-          }
-          i++;
-        }
-        messageContent = tmpData + messageContent;
-      } else {
-        return errorHandling(
-          ctx,
-          WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID,
-          "Additional headers were specified, but unable to find any configured headers!",
-          interrupt
-        );
-      }
-
-      log.debug(
-        "Final messageContent (prepended with additional header values): {}",
-        messageContent
+    } catch (IllegalArgumentException e) {
+      log.error(e.getMessage());
+      return errorHandling(
+        ctx,
+        WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID,
+        e.getMessage(),
+        interrupt
       );
     }
 
     //Generate HMAC Signature
     String mySignature = generateHmacSignature(
-      messageContent,
+      signedContent,
       secret,
       algorithm
     );
@@ -219,62 +182,25 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
       .getValue(configuration.getSecret(), String.class);
     String algorithm = configuration.getAlgorithm();
     String messageContent = message.content().toString();
-    List<String> addedHeaders = null;
-    String headersDelimiter = null;
 
-    log.debug("Config> messageContent: {}", messageContent);
-
-    log.debug(
-      "Config> Does the Signature validation require additional Message headers?: {}",
-      configuration.getSchemeType().isEnabled()
-    ); // true|false
-    if (configuration.getSchemeType().isEnabled()) {
-      addedHeaders = new ArrayList<>(
-        configuration.getSchemeType().getHeaders()
+    String signedContent;
+    try {
+      signedContent = prependAdditionalHeaders(
+        messageContent,
+        message.headers()::get
       );
-
-      headersDelimiter = configuration.getSchemeType().getHeadersDelimiter();
-      log.debug("Config> headersDelimiter: {}", headersDelimiter);
-
-      if (addedHeaders.size() > 0) {
-        int i = 0;
-        String tmpData = "";
-        while (i < addedHeaders.size()) {
-          log.debug(
-            "Config> Prefixing HTTP/Message header '{}' ({}) to Message Content",
-            addedHeaders.get(i),
-            message.headers().get(addedHeaders.get(i))
-          );
-          if (message.headers().get(addedHeaders.get(i)) == null) {
-            return ctx.interruptMessageWith(
-              new ExecutionFailure(500)
-                .key(WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID)
-                .message("A specified header value is invalid or missing!")
-            );
-          } else {
-            tmpData +=
-              message.headers().get(addedHeaders.get(i)) + headersDelimiter;
-          }
-          i++;
-        }
-        messageContent = tmpData + messageContent;
-      } else {
-        return ctx.interruptMessageWith(
-          new ExecutionFailure(500)
-            .key(WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID)
-            .message("A specified header value is invalid or missing!")
-        );
-      }
-
-      log.debug(
-        "Final messageContent (prepended with additional header values): {}",
-        messageContent
+    } catch (IllegalArgumentException e) {
+      log.error(e.getMessage());
+      return ctx.interruptMessageWith(
+        new ExecutionFailure(500)
+          .key(WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID)
+          .message(e.getMessage())
       );
     }
 
     //Generate HMAC Signature
     String mySignature = generateHmacSignature(
-      messageContent,
+      signedContent,
       secret,
       algorithm
     );
@@ -296,6 +222,58 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
 
   // SUPPORTING CODE
   // ***************
+
+  /**
+   * Prepends the configured additional header values (each followed by the configured delimiter) to the given content.
+   * Returns the content unchanged when the "additional headers" scheme is disabled.
+   *
+   * @throws IllegalArgumentException if the scheme is enabled but no headers are configured, or a configured header is missing
+   */
+  private String prependAdditionalHeaders(
+    String content,
+    Function<String, String> headerGetter
+  ) {
+    if (!configuration.getSchemeType().isEnabled()) {
+      return content;
+    }
+
+    List<String> addedHeaders = new ArrayList<>(
+      configuration.getSchemeType().getHeaders()
+    );
+    if (addedHeaders.isEmpty()) {
+      throw new IllegalArgumentException(
+        "Additional headers were specified, but unable to find any configured headers!"
+      );
+    }
+
+    String headersDelimiter = configuration
+      .getSchemeType()
+      .getHeadersDelimiter();
+    log.debug("Config> headersDelimiter: {}", headersDelimiter);
+
+    StringBuilder prefix = new StringBuilder();
+    for (String headerName : addedHeaders) {
+      String headerValue = headerGetter.apply(headerName);
+      log.debug(
+        "Config> Prefixing header '{}' ({}) to content",
+        headerName,
+        headerValue
+      );
+      if (headerValue == null) {
+        throw new IllegalArgumentException(
+          "A specified header value is invalid or missing!"
+        );
+      }
+      prefix.append(headerValue).append(headersDelimiter);
+    }
+
+    String result = prefix + content;
+    log.debug(
+      "Final content (prepended with additional header values): {}",
+      result
+    );
+    return result;
+  }
 
   private Completable addSignatureToHeader(
     final TemplateEngine templateEngine,
