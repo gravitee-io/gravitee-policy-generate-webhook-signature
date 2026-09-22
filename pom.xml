@@ -39,7 +39,6 @@
 		<maven-plugin-properties.version>1.2.1</maven-plugin-properties.version>
 		<!-- Property used by the publication job in CI-->
 		<publish-folder-path>graviteeio-apim/plugins/policies</publish-folder-path>
-		<gravitee-gateway.version>3.6.3</gravitee-gateway.version>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
@@ -100,9 +99,9 @@
 		</dependency>
 		<!-- Test scope -->
 		<dependency>
-			<groupId>io.gravitee.gateway</groupId>
-			<artifactId>gravitee-gateway-buffer</artifactId>
-			<version>${gravitee-gateway.version}</version>
+			<groupId>io.gravitee.apim.gateway</groupId>
+			<artifactId>gravitee-apim-gateway-buffer</artifactId>
+			<version>${gravitee-apim.version}</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
