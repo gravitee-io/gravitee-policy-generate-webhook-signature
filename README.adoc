@@ -57,8 +57,23 @@ The "Signature" is based on the model that the receiver must authenticate itself
 
 .^|headers [List]
 ^.^|-
-|List of existing HTTP or Message headers to prepend their values to the body/message for generating the HMAC signature
+|List of existing HTTP or Message headers to prepend their values to the body/message for generating the HMAC signature. These headers are read before `timestampValidity` generates its timestamp header, so `timestampValidity.targetTimestampHeader` must not be listed here.
 ^.^|
+
+.^|timestampValidity
+^.^|-
+|By default, no timestamp is generated. Set this boolean to 'true' to generate a timestamp (epoch seconds), include it in the HMAC signature, and expose it in a header - so the receiver (via the Webhook Signature Validator policy) can reject stale or replayed requests/messages.
+^.^| false
+
+.^|timestampValidity.targetTimestampHeader
+^.^|-
+|Specify the HTTP/Message header that will contain the generated timestamp
+^.^| X-HMAC-Timestamp
+
+.^|timestampValidity.delimiter
+^.^|-
+|Specify a delimiter to separate the timestamp from the rest of the signed content
+^.^| .
 
 .^|secret
 ^.^|X
@@ -83,8 +98,13 @@ The "Signature" is based on the model that the receiver must authenticate itself
 	  "enabled": true,
 	  "headersDelimiter": ".",
 	  "headers": [
-		"My-CustomHeader-Timestamp"
+		"My-CustomHeader"
 	  ]
+	},
+	"timestampValidity": {
+	  "enabled": true,
+	  "targetTimestampHeader": "X-HMAC-Timestamp",
+	  "delimiter": "."
 	},
 	"secret": "mySecret",
 	"targetSignatureHeader": "X-HMAC-Signature",
