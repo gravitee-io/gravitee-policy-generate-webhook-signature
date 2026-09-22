@@ -170,7 +170,7 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
       ctx.getTemplateEngine(),
       ctx.response().headers(),
       mySignature
-    ).onErrorResumeWith(
+    ).onErrorResumeNext(th ->
       errorHandling(
         ctx,
         WEBHOOK_SIGNATURE_ERROR,
@@ -285,7 +285,7 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
       mySignature
     )
       .andThen(Maybe.just(message))
-      .onErrorResumeWith(
+      .onErrorResumeNext(th ->
         ctx.interruptMessageWith(
           new ExecutionFailure(500)
             .key(WEBHOOK_SIGNATURE_ERROR)
