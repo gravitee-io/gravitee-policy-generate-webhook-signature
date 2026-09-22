@@ -40,7 +40,7 @@ public class SchemeTypeConfiguration {
   }
 
   // Optional - List of additional headers to add to the Webhook signature creation
-  private String headersDelimiter;
+  private String headersDelimiter = ".";
 
   private List<String> headers = new ArrayList<>();
 
