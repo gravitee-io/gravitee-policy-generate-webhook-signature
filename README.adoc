@@ -233,4 +233,7 @@ Here are the error keys sent by this policy:
 .^|WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID
 ^.^|-
 
+.^|WEBHOOK_SIGNATURE_GENERATION_FAILED
+^.^|-
+
 |===

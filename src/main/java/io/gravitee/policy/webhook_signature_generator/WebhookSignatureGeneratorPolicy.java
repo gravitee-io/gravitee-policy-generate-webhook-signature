@@ -49,6 +49,8 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
     "WEBHOOK_SIGNATURE_ERROR";
   private static final String WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID =
     "WEBHOOK_ADDITIONAL_HEADERS_NOT_VALID";
+  private static final String WEBHOOK_SIGNATURE_GENERATION_FAILED =
+    "WEBHOOK_SIGNATURE_GENERATION_FAILED";
 
   /**
    * Policy configuration
@@ -136,6 +138,18 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
       algorithm
     );
 
+    if (mySignature == null) {
+      log.error(
+        "Unable to compute the HMAC signature - check the configured secret and algorithm"
+      );
+      return errorHandling(
+        ctx,
+        WEBHOOK_SIGNATURE_GENERATION_FAILED,
+        "Unable to compute the Webhook signature!",
+        interrupt
+      );
+    }
+
     return addSignatureToHeader(
       ctx.response().headers(),
       mySignature
@@ -218,6 +232,17 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
       secret,
       algorithm
     );
+
+    if (mySignature == null) {
+      log.error(
+        "Unable to compute the HMAC signature - check the configured secret and algorithm"
+      );
+      return ctx.interruptMessageWith(
+        new ExecutionFailure(500)
+          .key(WEBHOOK_SIGNATURE_GENERATION_FAILED)
+          .message("Unable to compute the Webhook signature!")
+      );
+    }
 
     return addSignatureToHeader(message.headers(), mySignature)
       .andThen(Maybe.just(message))
