@@ -532,6 +532,101 @@ class WebhookSignatureGeneratorPolicyTest {
     verify(httpHeaders, never()).set(eq("X-HMAC-Signature"), anyString());
   }
 
+  @Test
+  void shouldUseTheDefaultTimestampHeaderWhenNoneIsConfigured() {
+    TimestampValidityConfiguration timestampValidity =
+      new TimestampValidityConfiguration();
+    timestampValidity.setEnabled(true); // targetTimestampHeader left unset
+    configuration.setTimestampValidity(timestampValidity);
+
+    doReturn(mockResponse(buffer)).when(plainContext).response();
+    when(buffer.toString()).thenReturn("test payload");
+    when(plainContext.getTemplateEngine()).thenReturn(templateEngine);
+    when(templateEngine.getValue("mySecret", String.class)).thenReturn(
+      "mySecret"
+    );
+
+    new WebhookSignatureGeneratorPolicy(configuration)
+      .onResponse(plainContext)
+      .test()
+      .assertComplete();
+
+    verify(httpHeaders).set(eq("X-HMAC-Timestamp"), anyString());
+  }
+
+  @Test
+  void shouldFailWhenTimestampHeaderIsBlank() {
+    TimestampValidityConfiguration timestampValidity =
+      new TimestampValidityConfiguration();
+    timestampValidity.setEnabled(true);
+    timestampValidity.setTargetTimestampHeader("   ");
+    configuration.setTimestampValidity(timestampValidity);
+
+    doReturn(mockResponse(buffer)).when(plainContext).response();
+    when(buffer.toString()).thenReturn("test payload");
+    when(plainContext.getTemplateEngine()).thenReturn(templateEngine);
+    when(templateEngine.getValue("mySecret", String.class)).thenReturn(
+      "mySecret"
+    );
+    when(plainContext.metrics()).thenReturn(metrics);
+    when(plainContext.interruptWith(any(ExecutionFailure.class))).thenReturn(
+      Completable.complete()
+    );
+
+    new WebhookSignatureGeneratorPolicy(configuration)
+      .onResponse(plainContext)
+      .test()
+      .assertComplete();
+
+    ArgumentCaptor<ExecutionFailure> failureCaptor = ArgumentCaptor.forClass(
+      ExecutionFailure.class
+    );
+    verify(plainContext).interruptWith(failureCaptor.capture());
+    assertThat(failureCaptor.getValue().key()).isEqualTo(
+      "WEBHOOK_SIGNATURE_TIMESTAMP_HEADER_NOT_VALID"
+    );
+  }
+
+  @Test
+  void shouldFailWithoutEscapingWhenTimestampHeaderIsBlankOnMessage() {
+    TimestampValidityConfiguration timestampValidity =
+      new TimestampValidityConfiguration();
+    timestampValidity.setEnabled(true);
+    timestampValidity.setTargetTimestampHeader("   ");
+    configuration.setTimestampValidity(timestampValidity);
+
+    when(message.content()).thenReturn(Buffer.buffer("message payload"));
+    when(message.headers()).thenReturn(httpHeaders);
+    HttpMessageResponse response = mockMessageResponse();
+    when(messageContext.response()).thenReturn(response);
+    when(messageContext.getTemplateEngine()).thenReturn(templateEngine);
+    when(templateEngine.getValue("mySecret", String.class)).thenReturn(
+      "mySecret"
+    );
+    when(
+      messageContext.interruptMessageWith(any(ExecutionFailure.class))
+    ).thenReturn(Maybe.empty());
+
+    WebhookSignatureGeneratorPolicy policy =
+      new WebhookSignatureGeneratorPolicy(configuration);
+    policy.onMessageResponse(messageContext).test().assertComplete();
+    ArgumentCaptor<Function<Message, Maybe<Message>>> onMessageCaptor =
+      ArgumentCaptor.forClass(Function.class);
+    verify(response).onMessage(onMessageCaptor.capture());
+
+    // must not throw out of the mapper: that would bypass the policy's own
+    // error handling entirely
+    onMessageCaptor.getValue().apply(message).test().assertComplete();
+
+    ArgumentCaptor<ExecutionFailure> failureCaptor = ArgumentCaptor.forClass(
+      ExecutionFailure.class
+    );
+    verify(messageContext).interruptMessageWith(failureCaptor.capture());
+    assertThat(failureCaptor.getValue().key()).isEqualTo(
+      "WEBHOOK_SIGNATURE_TIMESTAMP_HEADER_NOT_VALID"
+    );
+  }
+
   // Helper methods
 
   private static String hmac(String data, String secret, String algorithm) {

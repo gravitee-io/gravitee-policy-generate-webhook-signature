@@ -30,7 +30,7 @@ public class TimestampValidityConfiguration {
   // and prepended to the content used to compute the HMAC signature, allowing the receiver to detect replayed requests/messages
   private boolean enabled;
 
-  private String targetTimestampHeader;
+  private String targetTimestampHeader = "X-HMAC-Timestamp";
 
   // Delimiter placed between the generated timestamp and the rest of the signed content
   private String delimiter = ".";
