@@ -101,7 +101,7 @@
 		<dependency>
 			<groupId>io.gravitee.apim.gateway</groupId>
 			<artifactId>gravitee-apim-gateway-buffer</artifactId>
-			<version>4.7.4</version>
+			<version>${gravitee-apim.version}</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>

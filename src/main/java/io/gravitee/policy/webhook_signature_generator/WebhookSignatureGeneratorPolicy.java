@@ -15,7 +15,6 @@
  */
 package io.gravitee.policy.webhook_signature_generator;
 
-import io.gravitee.el.TemplateEngine;
 import io.gravitee.gateway.api.buffer.Buffer;
 import io.gravitee.gateway.api.http.HttpHeaders;
 import io.gravitee.gateway.reactive.api.ExecutionFailure;
@@ -98,7 +97,7 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
     Buffer buffer,
     BiFunction<T, ExecutionFailure, Completable> interrupt
   ) {
-    log.info(
+    log.debug(
       "Executing WebhookSignatureGeneratorPolicy (in onResponse context)..."
     );
 
@@ -107,8 +106,6 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
       .getValue(configuration.getSecret(), String.class);
     String algorithm = configuration.getAlgorithm();
     String messageContent = buffer.toString();
-
-    log.debug("Config> messageContent: {}", messageContent);
 
     String signedContent;
     try {
@@ -140,11 +137,7 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
       algorithm
     );
 
-    return addSignatureToHeader(
-      ctx.getTemplateEngine(),
-      ctx.response().headers(),
-      mySignature
-    )
+    return addSignatureToHeader(ctx.response().headers(), mySignature)
       .onErrorResumeNext(th ->
         errorHandling(
           ctx,
@@ -185,7 +178,7 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
     final HttpMessageExecutionContext ctx,
     final Message message
   ) {
-    log.info(
+    log.debug(
       "Executing WebhookSignatureGeneratorPolicy (in onMessageResponse context)..."
     );
 
@@ -194,8 +187,6 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
       .getValue(configuration.getSecret(), String.class);
     String algorithm = configuration.getAlgorithm();
     String messageContent = message.content().toString();
-
-    log.debug("Config> messageContent: {}", messageContent);
 
     String signedContent;
     try {
@@ -228,11 +219,7 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
       algorithm
     );
 
-    return addSignatureToHeader(
-      ctx.getTemplateEngine(message),
-      message.headers(),
-      mySignature
-    )
+    return addSignatureToHeader(message.headers(), mySignature)
       .andThen(Maybe.just(message))
       .onErrorResumeNext(th ->
         ctx.interruptMessageWith(
@@ -320,7 +307,6 @@ public class WebhookSignatureGeneratorPolicy implements HttpPolicy {
   }
 
   private Completable addSignatureToHeader(
-    final TemplateEngine templateEngine,
     final HttpHeaders httpHeaders,
     final String signature
   ) {

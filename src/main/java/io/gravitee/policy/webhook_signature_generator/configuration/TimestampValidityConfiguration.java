@@ -33,5 +33,5 @@ public class TimestampValidityConfiguration {
   private String targetTimestampHeader;
 
   // Delimiter placed between the generated timestamp and the rest of the signed content
-  private String delimiter;
+  private String delimiter = ".";
 }
