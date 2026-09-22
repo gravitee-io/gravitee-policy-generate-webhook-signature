@@ -25,13 +25,14 @@ import lombok.Setter;
  */
 @Getter
 @Setter
-public class WebhookSignatureGeneratorPolicyConfiguration implements PolicyConfiguration {
+public class WebhookSignatureGeneratorPolicyConfiguration
+  implements PolicyConfiguration {
 
-    private String targetSignatureHeader;
+  private String targetSignatureHeader;
 
-    private SchemeTypeConfiguration schemeType = new SchemeTypeConfiguration();
+  private SchemeTypeConfiguration schemeType = new SchemeTypeConfiguration();
 
-    private String algorithm;
+  private String algorithm;
 
-    private String secret;
+  private String secret;
 }
