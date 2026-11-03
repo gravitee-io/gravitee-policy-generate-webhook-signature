@@ -46,7 +46,7 @@
 			<dependency>
 				<groupId>io.gravitee.apim</groupId>
 				<artifactId>gravitee-apim-bom</artifactId>
-				<version>4.7.7</version>
+				<version>4.12.20</version>
 				<scope>import</scope>
 				<type>pom</type>
 			</dependency>
